@@ -1,0 +1,281 @@
+@import "tailwindcss";
+
+:root {
+  --background: #050d08;
+  --surface: #0a1a10;
+  --surface-2: #102518;
+  --foreground: #eaf3ec;
+  --muted: #9db8a5;
+  --line: rgba(214, 236, 220, 0.12);
+  --gold: #d9ab54;
+  --gold-soft: #ecc987;
+  --leaf: #3f7d52;
+  --mist: #9fc7ae;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-gold: var(--gold);
+  --color-gold-soft: var(--gold-soft);
+  --color-leaf: var(--leaf);
+  --color-mist: var(--mist);
+  --font-sans: var(--font-manrope);
+  --font-display: var(--font-marcellus);
+}
+
+html {
+  scroll-behavior: auto; /* Lenis owns scrolling */
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: rgba(217, 171, 84, 0.35);
+  color: #fff;
+}
+
+/* Thin jungle scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #04100a;
+}
+::-webkit-scrollbar-thumb {
+  background: #1d4029;
+  border-radius: 8px;
+  border: 2px solid #04100a;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2c5c3c;
+}
+
+/* ------------------------------------------------------------------ */
+/* Typography helpers                                                  */
+/* ------------------------------------------------------------------ */
+
+.font-display {
+  font-family: var(--font-marcellus), Georgia, serif;
+}
+
+.text-gradient-gold {
+  background: linear-gradient(105deg, #f2ddae 0%, var(--gold) 45%, #a97e2f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.eyebrow {
+  font-size: 0.72rem;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* ------------------------------------------------------------------ */
+/* Scroll-reveal system (classes toggled by <Reveal/>)                 */
+/* ------------------------------------------------------------------ */
+
+.reveal {
+  opacity: 0;
+  transition:
+    opacity 1s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 1.1s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 1.1s cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+.reveal-up {
+  transform: translateY(48px);
+}
+.reveal-left {
+  transform: translateX(-56px);
+}
+.reveal-right {
+  transform: translateX(56px);
+}
+.reveal-scale {
+  transform: scale(0.92);
+}
+.reveal-blur {
+  filter: blur(14px);
+  transform: translateY(24px);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+  }
+}
+
+/* Hero word-by-word rise */
+@keyframes word-rise {
+  from {
+    opacity: 0;
+    transform: translateY(110%) rotate(4deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0);
+  }
+}
+.word-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  padding-bottom: 0.08em;
+  margin-bottom: -0.08em;
+}
+.word-rise {
+  display: inline-block;
+  animation: word-rise 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Slow drifting mist bands (DOM overlay) */
+@keyframes mist-drift {
+  from {
+    transform: translateX(-12%);
+  }
+  to {
+    transform: translateX(12%);
+  }
+}
+.mist-band {
+  animation: mist-drift 26s ease-in-out infinite alternate;
+}
+.mist-band-2 {
+  animation: mist-drift 38s ease-in-out infinite alternate-reverse;
+}
+
+/* Scroll cue */
+@keyframes cue-drop {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+}
+.scroll-cue-dot {
+  animation: cue-drop 1.8s ease-in-out infinite;
+}
+
+/* Ken Burns for hero/parallax imagery */
+@keyframes kenburns {
+  from {
+    transform: scale(1.08) translateY(0);
+  }
+  to {
+    transform: scale(1.16) translateY(-2.5%);
+  }
+}
+.kenburns {
+  animation: kenburns 18s ease-in-out infinite alternate;
+}
+
+/* Marquee strip */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.marquee-track {
+  animation: marquee 30s linear infinite;
+}
+
+/* Film-grain overlay */
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: -100%;
+  z-index: 70;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 250 250' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Vignette that keeps text readable over the WebGL canvas */
+.jungle-vignette {
+  background:
+    radial-gradient(120% 90% at 50% 10%, transparent 40%, rgba(3, 10, 6, 0.55) 100%),
+    linear-gradient(to bottom, rgba(3, 10, 6, 0.35), transparent 22%, transparent 70%, rgba(3, 10, 6, 0.7));
+}
+
+/* Card lift */
+.card-lift {
+  transition:
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.6s ease,
+    border-color 0.4s ease;
+}
+.card-lift:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.7);
+  border-color: rgba(217, 171, 84, 0.4);
+}
+
+/* Image zoom-on-hover inside overflow-hidden frames */
+.img-zoom img {
+  transition: transform 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.img-zoom:hover img {
+  transform: scale(1.07);
+}
+
+/* Gold underline link */
+.link-gold {
+  position: relative;
+}
+.link-gold::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -3px;
+  height: 1px;
+  width: 100%;
+  background: var(--gold);
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.link-gold:hover::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+/* Firefly dots used in DOM (footer etc.) */
+@keyframes firefly-blink {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
