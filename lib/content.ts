@@ -23,12 +23,38 @@ export const heroImages = {
   dining: u("photo-1742281095650-dd3c50c08772", 2000),
 };
 
+/* ----------------------------- The leopard icon ---------------------------- */
+
+export const leopardFeature = {
+  eyebrow: "The Icon of Wilpattu",
+  title: "The ghost the forest answers to",
+  image: {
+    src: u("photo-1705936981595-dea87508ce84", 2000),
+    alt: "Sri Lankan leopard walking down a red-dust road in Wilpattu National Park",
+  },
+  paragraphs: [
+    "Everything in Wilpattu orbits one animal. The Sri Lankan leopard — Panthera pardus kotiya, found nowhere else on Earth — is the park's apex predator, and with no lions or tigers to yield to, it owns the roads in daylight like nowhere else in Asia.",
+    "Wilpattu's leopards are famously relaxed: big territorial males patrol the sand tracks at walking pace, and the deep shade around the villus is where mothers raise their cubs. Our trackers log every sighting, every pug-mark, every alarm call — so each drive starts where yesterday's story ended.",
+  ],
+  stats: [
+    { value: "Endemic", label: "A subspecies unique to Sri Lanka" },
+    { value: "No. 1", label: "Predator — top of the island's food chain" },
+    { value: "Dawn & dusk", label: "Prime hours on the park roads" },
+    { value: "Year-round", label: "Resident — no season without leopards" },
+  ],
+};
+
 /* --------------------------------- Wildlife -------------------------------- */
 
-export const wildlife: (Photo & { name: string; blurb: string })[] = [
+export const wildlife: (Photo & {
+  name: string;
+  blurb: string;
+  iconOfPark?: boolean;
+})[] = [
   {
     name: "Sri Lankan Leopard",
     tag: "Panthera pardus kotiya",
+    iconOfPark: true,
     src: u("photo-1661768508643-e260f6f8e06c"),
     alt: "Sri Lankan leopard walking along a dirt track in Wilpattu National Park",
     blurb:
