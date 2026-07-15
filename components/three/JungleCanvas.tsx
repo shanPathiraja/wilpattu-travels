@@ -146,34 +146,6 @@ function Moon() {
 /* Procedural forest — instanced trunks + canopy blobs               */
 /* ---------------------------------------------------------------- */
 
-interface TreeSpec {
-  x: number;
-  z: number;
-  h: number;
-  lean: number;
-  spin: number;
-  shade: number;
-}
-
-function makeForest(count: number, seedFn: () => number): TreeSpec[] {
-  const trees: TreeSpec[] = [];
-  for (let i = 0; i < count; i++) {
-    // keep a walkable corridor clear around x ∈ (-3.2, 3.2)
-    const side = seedFn() > 0.5 ? 1 : -1;
-    const x = side * (3.6 + seedFn() * 16);
-    const z = 18 - seedFn() * 110;
-    trees.push({
-      x,
-      z,
-      h: 5 + seedFn() * 9,
-      lean: (seedFn() - 0.5) * 0.22,
-      spin: seedFn() * Math.PI * 2,
-      shade: 0.7 + seedFn() * 0.5,
-    });
-  }
-  return trees;
-}
-
 // deterministic PRNG so SSR/client render the same forest
 function mulberry32(a: number) {
   return () => {
@@ -185,74 +157,336 @@ function mulberry32(a: number) {
   };
 }
 
-function Forest() {
-  const trunkRef = useRef<THREE.InstancedMesh>(null);
-  const canopyRef = useRef<THREE.InstancedMesh>(null);
+/**
+ * Merge transformed geometry parts into one non-indexed BufferGeometry
+ * carrying per-vertex colors — lets a whole tree render as one instance.
+ */
+function mergeParts(
+  parts: { geometry: THREE.BufferGeometry; color: THREE.Color; darkenBase?: boolean }[],
+): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  for (const part of parts) {
+    const geo = part.geometry.toNonIndexed();
+    const pos = geo.getAttribute("position");
+    geo.computeBoundingBox();
+    const box = geo.boundingBox!;
+    const span = Math.max(0.0001, box.max.y - box.min.y);
+    for (let i = 0; i < pos.count; i++) {
+      positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+      // darken undersides so crowns read as lit from the sky
+      const t = part.darkenBase
+        ? 0.55 + 0.45 * ((pos.getY(i) - box.min.y) / span)
+        : 1;
+      colors.push(part.color.r * t, part.color.g * t, part.color.b * t);
+    }
+    geo.dispose();
+  }
+  const merged = new THREE.BufferGeometry();
+  merged.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
+  merged.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  return merged;
+}
 
-  const { trees, canopies } = useMemo(() => {
-    const rand = mulberry32(20260715);
-    const trees = makeForest(110, rand);
-    const canopies = trees.flatMap((t) => {
-      const blobs = 2 + Math.floor(rand() * 2);
-      return Array.from({ length: blobs }, () => ({
-        x: t.x + (rand() - 0.5) * 2.4,
-        y: t.h * (0.72 + rand() * 0.35),
-        z: t.z + (rand() - 0.5) * 2.4,
-        r: 1.6 + rand() * 2.6,
-        shade: t.shade * (0.85 + rand() * 0.3),
-      }));
+/** Icosahedron with noise-displaced vertices — an irregular foliage clump. */
+function foliageClump(rand: () => number, radius: number): THREE.BufferGeometry {
+  const geo = new THREE.IcosahedronGeometry(radius, 2);
+  const pos = geo.getAttribute("position");
+  const seed = rand() * 100;
+  // PolyhedronGeometry duplicates vertices per face, so displacement must be
+  // a function of position (not vertex index) or the surface tears apart
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed) * 43758.5453;
+    const n = 0.86 + 0.28 * (s - Math.floor(s));
+    pos.setXYZ(i, x * n, y * n * 0.72, z * n);
+  }
+  return geo;
+}
+
+/**
+ * Build one unit-height tree: a bending tapered trunk, a fan of angled
+ * branches, and irregular foliage clumps at the branch tips — the flat,
+ * umbrella-crowned look of Wilpattu's dry-zone giants.
+ */
+function buildTreeArchetype(rand: () => number): THREE.BufferGeometry {
+  const parts: Parameters<typeof mergeParts>[0] = [];
+  const barkColor = new THREE.Color(0.06, 0.052, 0.04);
+  const up = new THREE.Vector3(0, 1, 0);
+
+  // --- trunk: stacked tapered segments that drift off-vertical
+  const segments = 4;
+  const base = new THREE.Vector3(0, 0, 0);
+  const dir = new THREE.Vector3(0, 1, 0);
+  const trunkPoints: THREE.Vector3[] = [];
+  let radius = 0.045 + rand() * 0.02;
+  for (let s = 0; s < segments; s++) {
+    const len = 0.16 + rand() * 0.08;
+    const rTop = radius * (0.62 + rand() * 0.12);
+    const seg = new THREE.CylinderGeometry(rTop, radius, len, 6, 1);
+    seg.translate(0, len / 2, 0);
+    const quat = new THREE.Quaternion().setFromUnitVectors(up, dir.clone().normalize());
+    seg.applyQuaternion(quat);
+    seg.translate(base.x, base.y, base.z);
+    parts.push({ geometry: seg, color: barkColor });
+    base.addScaledVector(dir.clone().normalize(), len);
+    trunkPoints.push(base.clone());
+    dir.x += (rand() - 0.5) * 0.35;
+    dir.z += (rand() - 0.5) * 0.35;
+    radius = rTop;
+  }
+
+  // --- branches fanning out from the upper trunk
+  const crownTips: { p: THREE.Vector3; r: number }[] = [
+    { p: base.clone(), r: 0.2 + rand() * 0.1 },
+  ];
+  const branchCount = 4 + Math.floor(rand() * 3);
+  for (let b = 0; b < branchCount; b++) {
+    const origin =
+      trunkPoints[
+        Math.min(trunkPoints.length - 1, 1 + Math.floor(rand() * (trunkPoints.length - 1)))
+      ].clone();
+    const azimuth = rand() * Math.PI * 2;
+    const tilt = 0.75 + rand() * 0.55; // radians from vertical — wide crowns
+    const bDir = new THREE.Vector3(
+      Math.sin(tilt) * Math.cos(azimuth),
+      Math.cos(tilt),
+      Math.sin(tilt) * Math.sin(azimuth),
+    );
+    const len = 0.22 + rand() * 0.24;
+    const branch = new THREE.CylinderGeometry(0.008, 0.02 + rand() * 0.012, len, 5, 1);
+    branch.translate(0, len / 2, 0);
+    branch.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, bDir));
+    branch.translate(origin.x, origin.y, origin.z);
+    parts.push({ geometry: branch, color: barkColor });
+    crownTips.push({
+      p: origin.addScaledVector(bDir, len),
+      r: 0.14 + rand() * 0.14,
     });
-    return { trees, canopies };
+  }
+
+  // --- foliage: clustered clumps around every branch tip
+  for (const tip of crownTips) {
+    const clumps = 2 + Math.floor(rand() * 2);
+    for (let c = 0; c < clumps; c++) {
+      const clump = foliageClump(rand, tip.r * (0.75 + rand() * 0.5));
+      clump.translate(
+        tip.p.x + (rand() - 0.5) * tip.r * 1.2,
+        tip.p.y + (rand() - 0.3) * tip.r * 0.7,
+        tip.p.z + (rand() - 0.5) * tip.r * 1.2,
+      );
+      const g = 0.09 + rand() * 0.05;
+      parts.push({
+        geometry: clump,
+        color: new THREE.Color(g * 0.45, g, g * 0.55),
+        darkenBase: true,
+      });
+    }
+  }
+
+  return mergeParts(parts);
+}
+
+interface TreeInstance {
+  x: number;
+  z: number;
+  h: number;
+  spin: number;
+  shade: number;
+}
+
+function scatterTrees(count: number, rand: () => number): TreeInstance[] {
+  return Array.from({ length: count }, () => {
+    // keep a walkable corridor clear around x ∈ (-3.2, 3.2)
+    const side = rand() > 0.5 ? 1 : -1;
+    return {
+      x: side * (3.6 + rand() * 16),
+      z: 18 - rand() * 110,
+      h: 6 + rand() * 8,
+      spin: rand() * Math.PI * 2,
+      shade: 0.65 + rand() * 0.55,
+    };
+  });
+}
+
+const ARCHETYPE_COUNT = 4;
+const TREES_PER_ARCHETYPE = 30;
+
+function Forest() {
+  const meshRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
+
+  const { archetypes, placements, bushGeo, bushes } = useMemo(() => {
+    const rand = mulberry32(20260715);
+    const archetypes = Array.from({ length: ARCHETYPE_COUNT }, () =>
+      buildTreeArchetype(rand),
+    );
+    const placements = Array.from({ length: ARCHETYPE_COUNT }, () =>
+      scatterTrees(TREES_PER_ARCHETYPE, rand),
+    );
+    // low undergrowth softening the forest floor
+    const bushGeo = foliageClump(rand, 1);
+    const bushes = Array.from({ length: 70 }, () => {
+      const side = rand() > 0.5 ? 1 : -1;
+      return {
+        x: side * (2.9 + rand() * 15),
+        z: 18 - rand() * 110,
+        s: 0.5 + rand() * 1.3,
+        shade: 0.4 + rand() * 0.5,
+      };
+    });
+    return { archetypes, placements, bushGeo, bushes };
   }, []);
 
   useEffect(() => {
     const dummy = new THREE.Object3D();
     const color = new THREE.Color();
-
-    const trunk = trunkRef.current;
-    if (trunk) {
+    placements.forEach((trees, a) => {
+      const mesh = meshRefs.current[a];
+      if (!mesh) return;
       trees.forEach((t, i) => {
-        dummy.position.set(t.x, t.h / 2, t.z);
-        dummy.rotation.set(t.lean, t.spin, t.lean * 0.6);
-        dummy.scale.set(1.3, t.h, 1.3);
+        dummy.position.set(t.x, 0, t.z);
+        dummy.rotation.set(0, t.spin, 0);
+        // trees are unit-height; widen slightly less than they grow tall
+        dummy.scale.set(t.h * 0.9, t.h, t.h * 0.9);
         dummy.updateMatrix();
-        trunk.setMatrixAt(i, dummy.matrix);
-        color.setRGB(0.045 * t.shade, 0.075 * t.shade, 0.05 * t.shade);
-        trunk.setColorAt(i, color);
+        mesh.setMatrixAt(i, dummy.matrix);
+        color.setRGB(t.shade, t.shade, t.shade);
+        mesh.setColorAt(i, color);
       });
-      trunk.instanceMatrix.needsUpdate = true;
-      if (trunk.instanceColor) trunk.instanceColor.needsUpdate = true;
-    }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    });
 
-    const canopy = canopyRef.current;
-    if (canopy) {
-      canopies.forEach((c, i) => {
-        dummy.position.set(c.x, c.y, c.z);
-        dummy.rotation.set(0, 0, 0);
-        dummy.scale.setScalar(c.r);
+    const bushMesh = meshRefs.current[ARCHETYPE_COUNT];
+    if (bushMesh) {
+      bushes.forEach((b, i) => {
+        dummy.position.set(b.x, b.s * 0.25, b.z);
+        dummy.rotation.set(0, b.x * 7.3, 0);
+        dummy.scale.set(b.s, b.s * 0.6, b.s);
         dummy.updateMatrix();
-        canopy.setMatrixAt(i, dummy.matrix);
-        color.setRGB(0.05 * c.shade, 0.13 * c.shade, 0.075 * c.shade);
-        canopy.setColorAt(i, color);
+        bushMesh.setMatrixAt(i, dummy.matrix);
+        color.setRGB(0.05 * b.shade, 0.11 * b.shade, 0.06 * b.shade);
+        bushMesh.setColorAt(i, color);
       });
-      canopy.instanceMatrix.needsUpdate = true;
-      if (canopy.instanceColor) canopy.instanceColor.needsUpdate = true;
+      bushMesh.instanceMatrix.needsUpdate = true;
+      if (bushMesh.instanceColor) bushMesh.instanceColor.needsUpdate = true;
     }
-  }, [trees, canopies]);
+  }, [placements, bushes]);
 
   return (
     <group>
-      <instancedMesh ref={trunkRef} args={[undefined, undefined, trees.length]}>
-        <cylinderGeometry args={[0.07, 0.2, 1, 6]} />
-        <meshBasicMaterial />
-      </instancedMesh>
+      {archetypes.map((geo, a) => (
+        <instancedMesh
+          key={a}
+          ref={(el) => {
+            meshRefs.current[a] = el;
+          }}
+          args={[geo, undefined, TREES_PER_ARCHETYPE]}
+        >
+          <meshBasicMaterial vertexColors />
+        </instancedMesh>
+      ))}
       <instancedMesh
-        ref={canopyRef}
-        args={[undefined, undefined, canopies.length]}
+        ref={(el) => {
+          meshRefs.current[ARCHETYPE_COUNT] = el;
+        }}
+        args={[bushGeo, undefined, bushes.length]}
       >
-        <icosahedronGeometry args={[1, 1]} />
         <meshBasicMaterial />
       </instancedMesh>
+    </group>
+  );
+}
+
+/* ---------------------------------------------------------------- */
+/* Leopard eyes — a pair of amber points watching from the dark      */
+/* ---------------------------------------------------------------- */
+
+function useEyeTexture() {
+  return useMemo(() => {
+    const size = 64;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    const g = ctx.createRadialGradient(
+      size / 2,
+      size / 2,
+      0,
+      size / 2,
+      size / 2,
+      size / 2,
+    );
+    g.addColorStop(0, "rgba(255, 214, 120, 1)");
+    g.addColorStop(0.35, "rgba(240, 180, 70, 0.85)");
+    g.addColorStop(1, "rgba(240, 180, 70, 0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.needsUpdate = true;
+    return tex;
+  }, []);
+}
+
+const EYE_CYCLE = 11; // seconds: fade in, watch, blink, fade out, move
+
+function LeopardEyes() {
+  const texture = useEyeTexture();
+  const group = useRef<THREE.Group>(null);
+  const mats = useRef<(THREE.SpriteMaterial | null)[]>([]);
+  const spot = useRef({ x: 6, y: 1.1, z: -20, placed: false });
+  const rand = useRef(mulberry32(97));
+
+  useFrame(({ camera, clock }) => {
+    const g = group.current;
+    if (!g) return;
+    const t = clock.elapsedTime % EYE_CYCLE;
+
+    // while invisible, relocate ahead of the walking camera
+    if (t < 0.1 && !spot.current.placed) {
+      const r = rand.current;
+      spot.current = {
+        x: (r() > 0.5 ? 1 : -1) * (4 + r() * 5),
+        y: 0.8 + r() * 1.1,
+        z: camera.position.z - 16 - r() * 14,
+        placed: true,
+      };
+    }
+    if (t > 1) spot.current.placed = false;
+    g.position.set(spot.current.x, spot.current.y, spot.current.z);
+
+    // fade in → hold → fade out, with a slow blink mid-stare
+    let opacity = 0;
+    if (t < 1.4) opacity = t / 1.4;
+    else if (t < 7.5) opacity = 1;
+    else if (t < 9) opacity = 1 - (t - 7.5) / 1.5;
+    const blink = t > 4 && t < 4.22 ? 0.08 : 1;
+    mats.current.forEach((m) => {
+      if (m) m.opacity = opacity * 0.9;
+    });
+    g.scale.y = blink;
+  });
+
+  return (
+    <group ref={group}>
+      {[-0.16, 0.16].map((dx, i) => (
+        <sprite key={i} position={[dx, 0, 0]} scale={[0.22, 0.22, 1]}>
+          <spriteMaterial
+            ref={(el) => {
+              mats.current[i] = el;
+            }}
+            map={texture}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </sprite>
+      ))}
     </group>
   );
 }
@@ -518,6 +752,7 @@ export default function JungleCanvas() {
         <GodRays />
         <Mist />
         <Fireflies />
+        <LeopardEyes />
         {!reduced && <CameraRig />}
       </Canvas>
     </div>

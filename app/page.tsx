@@ -6,6 +6,7 @@ import Parallax from "@/components/Parallax";
 import SectionHeading from "@/components/SectionHeading";
 import {
   heroImages,
+  leopardFeature,
   parkFacts,
   rooms,
   safariPackages,
@@ -175,6 +176,60 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ------------------------------------------------------ THE LEOPARD */}
+      <section className="relative overflow-hidden py-32">
+        <Parallax speed={-0.1} className="absolute inset-0">
+          <Image
+            src={leopardFeature.image.src}
+            alt={leopardFeature.image.alt}
+            fill
+            sizes="100vw"
+            className="scale-110 object-cover opacity-50"
+          />
+        </Parallax>
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/60 to-background/40" />
+        <div className="relative mx-auto max-w-7xl px-5 sm:px-8">
+          <div className="max-w-2xl">
+            <Reveal variant="fade">
+              <p className="eyebrow mb-4">{leopardFeature.eyebrow}</p>
+            </Reveal>
+            <Reveal variant="up" delay={100}>
+              <h2 className="font-display text-4xl leading-tight sm:text-6xl">
+                The <span className="text-gradient-gold">ghost</span> the
+                forest answers to
+              </h2>
+            </Reveal>
+            {leopardFeature.paragraphs.map((p, i) => (
+              <Reveal key={i} variant="up" delay={220 + i * 120}>
+                <p className="mt-5 leading-relaxed text-foreground/85">{p}</p>
+              </Reveal>
+            ))}
+            <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {leopardFeature.stats.map((s, i) => (
+                <Reveal key={s.label} variant="up" delay={480 + i * 100}>
+                  <div className="rounded-2xl border border-line bg-[#04110a]/70 p-5 backdrop-blur-sm">
+                    <p className="font-display text-xl text-gradient-gold">
+                      {s.value}
+                    </p>
+                    <p className="mt-2 text-xs leading-relaxed text-muted">
+                      {s.label}
+                    </p>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+            <Reveal variant="up" delay={900}>
+              <Link
+                href="/safari"
+                className="mt-10 inline-block rounded-full bg-gold px-8 py-3.5 text-sm font-semibold uppercase tracking-[0.14em] text-[#12200f] transition hover:bg-gold-soft"
+              >
+                Track the Leopard
+              </Link>
+            </Reveal>
+          </div>
+        </div>
+      </section>
+
       {/* ---------------------------------------------------------- WILDLIFE */}
       <section className="relative px-5 py-24 sm:px-8">
         <SectionHeading
@@ -195,6 +250,11 @@ export default function HomePage() {
                     className="object-cover"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-surface via-transparent to-transparent" />
+                  {animal.iconOfPark && (
+                    <span className="absolute left-4 top-4 rounded-full bg-gold px-4 py-1.5 text-[0.62rem] font-bold uppercase tracking-[0.2em] text-[#12200f]">
+                      ★ Icon of Wilpattu
+                    </span>
+                  )}
                 </div>
                 <div className="p-6">
                   <p className="text-[0.65rem] uppercase tracking-[0.25em] text-gold">
